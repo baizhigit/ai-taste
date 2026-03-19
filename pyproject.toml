@@ -9,5 +9,8 @@ dependencies = [
     "groq>=1.1.1",
     "ipykernel>=7.2.0",
     "openai>=2.29.0",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
     "python-dotenv>=1.2.2",
+    "streamlit>=1.55.0",
 ]
