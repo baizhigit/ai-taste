@@ -48,7 +48,7 @@ def run_llm(provider, model_name, messages, max_tokens=500):
 
 class ChatRequest(BaseModel):
     provider: str
-    model_name: str
+    models_name: str
     messages: list[dict]
 
 class ChatResponse(BaseModel):
@@ -63,6 +63,6 @@ def chat(
     payload: ChatRequest
 ) -> ChatResponse:
 
-    result = run_llm(payload.provider, payload.model_name, payload.messages)
+    result = run_llm(payload.provider, payload.models_name, payload.messages)
 
     return ChatResponse(message=result)
