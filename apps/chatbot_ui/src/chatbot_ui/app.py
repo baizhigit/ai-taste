@@ -36,22 +36,22 @@ def api_call(method, url, **kwargs):
         return False, {"message": str(e)}
 
     
-## Lets create a sidebar with a dropdown for the model list and providers
-with st.sidebar:
-    st.title("Settings")
+# ## Lets create a sidebar with a dropdown for the model list and providers
+# with st.sidebar:
+#     st.title("Settings")
 
-    #Dropdown for model
-    provider = st.selectbox("Provider", ["OpenAI", "Groq", "Google"])
-    if provider == "OpenAI":
-        model_name = st.selectbox("Model", ["gpt-5-nano", "gpt-5-mini"])
-    elif provider == "Groq":
-        model_name = st.selectbox("Model", ["llama-3.3-70b-versatile"])
-    else:
-        model_name = st.selectbox("Model", ["gemini-2.5-flash"])
+#     #Dropdown for model
+#     provider = st.selectbox("Provider", ["OpenAI", "Groq", "Google"])
+#     if provider == "OpenAI":
+#         model_name = st.selectbox("Model", ["gpt-5-nano", "gpt-5-mini"])
+#     elif provider == "Groq":
+#         model_name = st.selectbox("Model", ["llama-3.3-70b-versatile"])
+#     else:
+#         model_name = st.selectbox("Model", ["gemini-2.5-flash"])
 
-    # Save provider and model to session state
-    st.session_state.provider = provider
-    st.session_state.model_name = model_name
+#     # Save provider and model to session state
+#     st.session_state.provider = provider
+#     st.session_state.model_name = model_name
 
 
 if "messages" not in st.session_state:
@@ -69,8 +69,8 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        output = api_call("post", f"{config.API_URL}/chat", json={"provider": st.session_state.provider, "models_name": st.session_state.model_name, "messages": st.session_state.messages})
+        output = api_call("post", f"{config.API_URL}/rag", json={"query": prompt})
         response_data = output[1]
-        answer = response_data["message"]
+        answer = response_data["answer"]
         st.write(answer)
     st.session_state.messages.append({"role": "assistant", "content": answer})

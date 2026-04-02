@@ -14,6 +14,7 @@ dependencies = [
     "openai>=2.29.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
+    "qdrant-client>=1.17.1",
     "uvicorn>=0.42.0",
 ]
 
