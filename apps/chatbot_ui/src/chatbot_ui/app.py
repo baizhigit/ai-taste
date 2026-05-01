@@ -3,6 +3,13 @@ import requests
 from chatbot_ui.core.config import config
 
 
+st.set_page_config(
+    page_title="Ecommerce Assistant",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+
 def api_call(method, url, **kwargs):
 
     def _show_error_popup(message):
@@ -36,23 +43,6 @@ def api_call(method, url, **kwargs):
         return False, {"message": str(e)}
 
     
-# ## Lets create a sidebar with a dropdown for the model list and providers
-# with st.sidebar:
-#     st.title("Settings")
-
-#     #Dropdown for model
-#     provider = st.selectbox("Provider", ["OpenAI", "Groq", "Google"])
-#     if provider == "OpenAI":
-#         model_name = st.selectbox("Model", ["gpt-5-nano", "gpt-5-mini"])
-#     elif provider == "Groq":
-#         model_name = st.selectbox("Model", ["llama-3.3-70b-versatile"])
-#     else:
-#         model_name = st.selectbox("Model", ["gemini-2.5-flash"])
-
-#     # Save provider and model to session state
-#     st.session_state.provider = provider
-#     st.session_state.model_name = model_name
-
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today?"}]
@@ -63,14 +53,40 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 
+if "used_context" not in st.session_state:
+    st.session_state.used_context = []
+
+
+with st.sidebar:
+
+    suggestions_tab, = st.tabs(["🔍 Suggestions"])
+
+    with suggestions_tab:
+        if st.session_state.used_context:
+            for idx, item in enumerate(st.session_state.used_context):
+                st.caption(item.get('description', 'No description'))
+                if 'image_url' in item:
+                    st.image(item["image_url"], width=250)
+                st.caption(f"Price: {item['price']} USD")
+                st.divider()
+        else:
+            st.info("No suggestions yet")
+
+
 if prompt := st.chat_input("Hello! How can I assist you today?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        output = api_call("post", f"{config.API_URL}/rag", json={"query": prompt})
-        response_data = output[1]
-        answer = response_data["answer"]
+        state, output = api_call("post", f"{config.API_URL}/rag", json={"query": prompt})
+        
+        answer = output["answer"]
+        used_context = output["used_context"]
+
+        st.session_state.used_context = used_context
+
         st.write(answer)
+
     st.session_state.messages.append({"role": "assistant", "content": answer})
+    st.rerun()
