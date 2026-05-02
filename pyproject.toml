@@ -23,6 +23,7 @@ members = [
 
 [dependency-groups]
 dev = [
+    "cohere>=6.1.0",
     "langgraph>=1.1.10",
     "langsmith>=0.7.24",
     "matplotlib>=3.10.8",
