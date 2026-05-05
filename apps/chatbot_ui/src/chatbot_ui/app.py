@@ -79,7 +79,7 @@ if prompt := st.chat_input("Hello! How can I assist you today?"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        state, output = api_call("post", f"{config.API_URL}/rag", json={"query": prompt})
+        state, output = api_call("post", f"{config.API_URL}/agent", json={"query": prompt})
         
         answer = output["answer"]
         used_context = output["used_context"]
