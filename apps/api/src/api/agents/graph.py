@@ -9,6 +9,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 import numpy as np
 from operator import add
+from langgraph.checkpoint.postgres import PostgresSaver
+from langchain_core.messages import HumanMessage
 
 
 class State(BaseModel):
@@ -22,16 +24,30 @@ class State(BaseModel):
 
 ### Edges
 
-def tool_router(state: State) -> dict:
+# def tool_router(state: State) -> dict:
+
+#     if state.final_answer:
+#         return "end"
+#     elif state.iteration > 2:
+#         return "end"
+#     elif len(state.messages[-1].tool_calls) > 0:
+#         return "tools"
+#     else:
+#         return "end"
+
+def tool_router(state: State) -> str:
+    last = state.messages[-1]
 
     if state.final_answer:
         return "end"
-    elif state.iteration > 2:
+
+    if state.iteration > 2:
         return "end"
-    elif len(state.messages[-1].tool_calls) > 0:
+
+    if getattr(last, "tool_calls", None):
         return "tools"
-    else:
-        return "end"
+
+    return "end"
 
 
 def intent_router_conditional_edges(state: State) -> str:
@@ -75,28 +91,42 @@ workflow.add_conditional_edges(
 
 workflow.add_edge("tool_node", "agent_node")
 
-graph = workflow.compile()
-
 
 ### Agent Execution
 
-def run_agent(question: str) -> dict:
+def run_agent(question: str, thread_id: str) -> dict:
 
-    intial_state = {
-        "messages": [{"role": "user", "content": question}],
+    # initial_state = {
+    #     "messages": [{"role": "user", "content": question}],
+    #     "iteration": 0
+    # }
+    initial_state = {
+        "messages": [HumanMessage(content=question)],
         "iteration": 0
     }
 
-    result = graph.invoke(intial_state)
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+    with PostgresSaver.from_conn_string(
+        "postgresql://langgraph_user:langgraph_password@postgres:5432/langgraph_db"
+    ) as checkpointer:
+
+        graph = workflow.compile(checkpointer=checkpointer)
+
+        result = graph.invoke(initial_state, config)
 
     return result
+ 
 
-
-def agent_wrapper(question, top_k=5):
+def agent_wrapper(question, thread_id):
 
     qdrant_client = QdrantClient(url="http://qdrant:6333")
 
-    result = run_agent(question)
+    result = run_agent(question, thread_id)
 
     used_context = []
     dummy_vector = np.zeros(1536)

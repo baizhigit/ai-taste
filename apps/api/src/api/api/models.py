@@ -4,6 +4,7 @@ from typing import Optional
 
 class RAGRequest(BaseModel):
     query: str
+    thread_id: str
 
 class RAGUsedContext(BaseModel):
     image_url: str = Field(description="URL of the image of the item used to answer the question")

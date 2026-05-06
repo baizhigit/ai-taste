@@ -19,7 +19,7 @@ def chat(
     payload: RAGRequest
 ) -> RAGResponse:
 
-    result = agent_wrapper(payload.query)
+    result = agent_wrapper(payload.query, payload.thread_id)
 
     return RAGResponse(
         answer=result["answer"], 

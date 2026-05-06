@@ -3,6 +3,7 @@ import instructor
 import numpy as np
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
+from qdrant_client import models
 from qdrant_client.models import Filter, FieldCondition, MatchValue, Prefetch, Document, FusionQuery
 from langsmith import traceable, get_current_run_tree
 
@@ -60,7 +61,7 @@ def retrieve_data(query, qdrant_client, k=5):
                 limit=20
             )
         ],
-        query=FusionQuery(fusion="rrf"),
+        query=models.RrfQuery(rrf=models.Rrf(weights=[1,1])),
         limit=k
     )
 

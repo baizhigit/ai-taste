@@ -3,7 +3,7 @@ from langsmith import traceable, get_current_run_tree
 from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
 import instructor
-from langchain_core.messages import convert_to_openai_messages
+from langchain_core.messages import convert_to_openai_messages, HumanMessage, AIMessage
 
 from api.agents.tools import get_formatted_item_context
 from api.agents.utils.prompt_management import prompt_template_config
@@ -18,6 +18,24 @@ class RAGUsedContext(BaseModel):
 class FinalResponse(BaseModel):
     answer: str = Field(description="Answer to the question.")
     references: list[RAGUsedContext] = Field(description="List of items used to answer the question")
+
+
+def sanitize_messages(messages):
+    sanitized = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            # Drop FinalResponse calls entirely — they have no ToolMessage
+            real_calls = [tc for tc in msg.tool_calls if tc["name"] != "FinalResponse"]
+            if not real_calls:
+                i += 1
+                continue  # skip this message entirely
+            if len(real_calls) < len(msg.tool_calls):
+                msg = AIMessage(content=msg.content, tool_calls=real_calls)
+        sanitized.append(msg)
+        i += 1
+    return sanitized
 
 
 ### Intent Router Response Model
@@ -39,13 +57,16 @@ def agent_node(state) -> dict:
     template = prompt_template_config("api/agents/prompts/qa_agent.yaml", "qa_agent")
     prompt = template.render()
 
-    messages = state.messages
+    messages = sanitize_messages(state.messages)
 
     llm = ChatOpenAI(model="gpt-4.1-mini")
     llm_with_tools = llm.bind_tools(
         [get_formatted_item_context, FinalResponse],
         tool_choice="auto"
     )
+
+    for i, m in enumerate(messages):
+        print(f"[{i}] {type(m).__name__}: tool_calls={getattr(m, 'tool_calls', [])} tool_call_id={getattr(m, 'tool_call_id', None)}")
 
     response = llm_with_tools.invoke(
         [
@@ -99,7 +120,13 @@ def intent_router_node(state) -> dict:
     conversation = []
 
     for message in messages:
-        conversation.append(convert_to_openai_messages(message))
+        if isinstance(message, HumanMessage):
+            conversation.append({"role": "user", "content": message.content})
+        elif isinstance(message, AIMessage) and isinstance(message.content, str):
+            conversation.append({"role": "assistant", "content": message.content})
+
+    # for message in messages:
+    #     conversation.append(convert_to_openai_messages(message))
 
     client = instructor.from_provider(
         "openai/gpt-4.1-mini",
