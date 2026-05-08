@@ -3,7 +3,7 @@ from typing import Annotated, List, Any
 from api.agents.agents import RAGUsedContext
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
-from api.agents.tools import get_formatted_item_context
+from api.agents.tools import get_formatted_item_context, get_formatted_reviews_context
 from api.agents.agents import agent_node, intent_router_node
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -24,30 +24,16 @@ class State(BaseModel):
 
 ### Edges
 
-# def tool_router(state: State) -> dict:
-
-#     if state.final_answer:
-#         return "end"
-#     elif state.iteration > 2:
-#         return "end"
-#     elif len(state.messages[-1].tool_calls) > 0:
-#         return "tools"
-#     else:
-#         return "end"
-
-def tool_router(state: State) -> str:
-    last = state.messages[-1]
+def tool_router(state: State) -> dict:
 
     if state.final_answer:
         return "end"
-
-    if state.iteration > 2:
+    elif state.iteration > 2:
         return "end"
-
-    if getattr(last, "tool_calls", None):
+    elif len(state.messages[-1].tool_calls) > 0:
         return "tools"
-
-    return "end"
+    else:
+        return "end"
 
 
 def intent_router_conditional_edges(state: State) -> str:
@@ -62,7 +48,7 @@ def intent_router_conditional_edges(state: State) -> str:
 
 workflow = StateGraph(State)
 
-tools = [get_formatted_item_context]
+tools = [get_formatted_item_context, get_formatted_reviews_context]
 tool_node = ToolNode(tools)
 
 workflow.add_node("tool_node", tool_node)
