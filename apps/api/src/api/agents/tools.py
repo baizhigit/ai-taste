@@ -82,58 +82,6 @@ def retrieve_data(query, k=5):
 
 
 @traceable(
-    name="retrieve_data",
-    run_type="retriever"
-)
-def retrieve_data(query, k=5):
-
-    qdrant_client = QdrantClient(
-        url="http://qdrant:6333"
-    )
-
-    query_embedding = get_embedding(query)
-
-    results = qdrant_client.query_points(
-        collection_name="Amazon-items-collection-01-hybrid-search",
-        prefetch=[
-            Prefetch(
-                query=query_embedding,
-                using="text-embedding-3-small",
-                limit=20
-            ),
-            Prefetch(
-                query=Document(
-                    text=query,
-                    model="qdrant/bm25"
-                ),
-                using="bm25",
-                limit=20
-            )
-        ],
-        query=models.RrfQuery(rrf=models.Rrf(weights=[1,1])),
-        limit=k
-    )
-
-    retrieved_context_ids = []
-    retieved_context = []
-    similarity_scores = []
-    retrieved_context_ratings = []
-
-    for result in results.points:
-        retrieved_context_ids.append(result.payload["parent_asin"])
-        retieved_context.append(result.payload["description"])
-        similarity_scores.append(result.score)
-        retrieved_context_ratings.append(result.payload["average_rating"])
-
-    return {
-        "retrieved_context_ids": retrieved_context_ids,
-        "retrieved_context": retieved_context,
-        "similarity_scores": similarity_scores,
-        "retrieved_context_ratings": retrieved_context_ratings
-    }
-
-
-@traceable(
     name="format_retrieved_context",
     run_type="prompt"
 )
