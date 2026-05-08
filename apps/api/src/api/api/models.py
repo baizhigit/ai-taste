@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Union
 
 
 class RAGRequest(BaseModel):
@@ -14,3 +14,14 @@ class RAGUsedContext(BaseModel):
 class RAGResponse(BaseModel):
     answer: str = Field(description="Answer to the question.")
     used_context: list[RAGUsedContext] = Field(description="List of items used to answer the question")
+    trace_id: str = Field(description="Trace ID of the question")
+
+
+class FeedbackRequest(BaseModel):
+    trace_id: str
+    feedback_score: Union[int, None] = Field(description="Feedback score")
+    feedback_text: str = Field(description="Feedback text")
+    feedback_source_type: str = Field(description="Feedback source type")
+
+class FeedbackResponse(BaseModel):
+    message: str = Field(description="Message indicating that the feedback has been submitted")

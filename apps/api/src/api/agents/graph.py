@@ -20,6 +20,7 @@ class State(BaseModel):
     answer: str = ""
     final_answer: bool = False
     references: Annotated[List[RAGUsedContext], add] = []
+    trace_id: str = ""
 
 
 ### Edges
@@ -147,5 +148,6 @@ def agent_wrapper(question, thread_id):
 
     return {
         "answer": result.get("answer", ""),
-        "used_context": used_context
+        "used_context": used_context,
+        "trace_id": result.get("trace_id", "")
     }
