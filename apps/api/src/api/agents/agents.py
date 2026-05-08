@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI
 import instructor
 from langchain_core.messages import convert_to_openai_messages, HumanMessage, AIMessage
 
-from api.agents.tools import get_formatted_item_context
+from api.agents.tools import get_formatted_items_context
 from api.agents.utils.prompt_management import prompt_template_config
 
 
@@ -61,7 +61,7 @@ def agent_node(state) -> dict:
 
     llm = ChatOpenAI(model="gpt-4.1-mini")
     llm_with_tools = llm.bind_tools(
-        [get_formatted_item_context, FinalResponse],
+        [get_formatted_items_context, FinalResponse],
         tool_choice="auto"
     )
 

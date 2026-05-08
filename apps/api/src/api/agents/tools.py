@@ -33,7 +33,7 @@ def get_embedding(text, model="text-embedding-3-small"):
     name="retrieve_data",
     run_type="retriever"
 )
-def retrieve_data(query, k=5):
+def retrieve_items_data(query, k=5):
 
     qdrant_client = QdrantClient(
         url="http://qdrant:6333"
@@ -85,7 +85,7 @@ def retrieve_data(query, k=5):
     name="format_retrieved_context",
     run_type="prompt"
 )
-def process_context(context):
+def process_items_context(context):
 
     formatted_context = ""
 
@@ -96,7 +96,7 @@ def process_context(context):
 
 
 @tool
-def get_formatted_item_context(query: str, top_k: int = 5) -> str:
+def get_formatted_items_context(query: str, top_k: int = 5) -> str:
 
     """Get the top k context, each representing an inventory item for a given query.
     
@@ -108,8 +108,8 @@ def get_formatted_item_context(query: str, top_k: int = 5) -> str:
         A string of the top k context chunks with IDs and average ratings prepending each chunk, each representing an inventory item for a given query.
     """
 
-    context = retrieve_data(query, top_k)
-    formatted_context = process_context(context)
+    context = retrieve_items_data(query, top_k)
+    formatted_context = process_items_context(context)
 
     return formatted_context
 
