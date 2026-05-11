@@ -154,15 +154,36 @@ def parse_docstring_params(docstring: str) -> Dict[str, str]:
     return params
 
 
+
 def get_tool_descriptions(function_list):
     """Extract tool descriptions from the function list"""
     descriptions = []
-
     for function in function_list:
-        function_string = inspect.getsource(function)
-        result = parse_function_definition(function_string)
+        # For LangChain StructuredTool, .func holds the underlying callable
+        unwrapped = getattr(function, 'func', None) or function
 
-        if result:
-            descriptions.append(result)
-    
+        try:
+            function_string = inspect.getsource(unwrapped)
+            result = parse_function_definition(function_string)
+            if result:
+                descriptions.append(result)
+        except TypeError:
+            name = getattr(function, 'name', repr(function))
+            description = getattr(function, 'description', 'No description available')
+            descriptions.append(f"Tool: {name}\nDescription: {description}")
+
     return descriptions if descriptions else "Could not extract tool descriptions"
+
+
+# def xget_tool_descriptions(function_list):
+#     """Extract tool descriptions from the function list"""
+#     descriptions = []
+
+#     for function in function_list:
+#         function_string = inspect.getsource(function)
+#         result = parse_function_definition(function_string)
+
+#         if result:
+#             descriptions.append(result)
+    
+#     return descriptions if descriptions else "Could not extract tool descriptions"
