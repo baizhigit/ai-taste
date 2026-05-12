@@ -1,12 +1,16 @@
 from pydantic import BaseModel, Field
+from typing import List
 from langsmith import traceable, get_current_run_tree
-from langchain_core.messages import SystemMessage
-from langchain_openai import ChatOpenAI
 import instructor
-from langchain_core.messages import convert_to_openai_messages, HumanMessage, AIMessage
+from langchain_core.messages import convert_to_openai_messages, AIMessage
 
-from api.agents.tools import get_formatted_items_context
 from api.agents.utils.prompt_management import prompt_template_config
+from api.agents.utils.utils import format_ai_message
+
+
+class ToolCall(BaseModel):
+    name: str
+    arguments: dict
 
 
 ### QnA Agent Response Model
@@ -15,122 +19,76 @@ class RAGUsedContext(BaseModel):
     id: str = Field(description="ID of the item used to answer the question")
     description: str = Field(description="Short description of the item used to answer the question")
 
-class FinalResponse(BaseModel):
+class ProductQAAgentResponse(BaseModel):
     answer: str = Field(description="Answer to the question.")
     references: list[RAGUsedContext] = Field(description="List of items used to answer the question")
+    final_answer: bool = False
+    tool_calls: List[ToolCall] = []
 
 
-def sanitize_messages(messages):
-    sanitized = []
-    i = 0
-    while i < len(messages):
-        msg = messages[i]
-        if isinstance(msg, AIMessage) and msg.tool_calls:
-            # Drop FinalResponse calls entirely — they have no ToolMessage
-            real_calls = [tc for tc in msg.tool_calls if tc["name"] != "FinalResponse"]
-            if not real_calls:
-                i += 1
-                continue  # skip this message entirely
-            if len(real_calls) < len(msg.tool_calls):
-                msg = AIMessage(content=msg.content, tool_calls=real_calls)
-        sanitized.append(msg)
-        i += 1
-    return sanitized
+### Shopping Cart Agent Response Model
+
+class ShoppingCartAgentResponse(BaseModel):
+    answer: str = Field(description="Answer to the question.")
+    final_answer: bool = False
+    tool_calls: List[ToolCall] = []
 
 
-### Intent Router Response Model
+### Coordinator Agent Response Model
 
-class IntentRouterResponse(BaseModel):
-    question_relevant: bool
+class Delegation(BaseModel):
+    agent: str
+    task: str
+
+class CoordinatorAgentResponse(BaseModel):
+    next_agent: str
+    plan: List[Delegation]
+    final_answer: bool = False
     answer: str
 
 
-### QnA Agent Node
+# def sanitize_messages(messages):
+#     sanitized = []
+#     i = 0
+#     while i < len(messages):
+#         msg = messages[i]
+#         if isinstance(msg, AIMessage) and msg.tool_calls:
+#             # Drop FinalResponse calls entirely — they have no ToolMessage
+#             real_calls = [tc for tc in msg.tool_calls if tc["name"] != "FinalResponse"]
+#             if not real_calls:
+#                 i += 1
+#                 continue  # skip this message entirely
+#             if len(real_calls) < len(msg.tool_calls):
+#                 msg = AIMessage(content=msg.content, tool_calls=real_calls)
+#         sanitized.append(msg)
+#         i += 1
+#     return sanitized
+
+
+### Product QnA Agent
 
 @traceable(
-    name="agent_node",
+    name="product_qa_agent",
     run_type="llm",
     metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
 )
-def agent_node(state) -> dict:
+def product_qa_agent(state) -> dict:
 
-    template = prompt_template_config("api/agents/prompts/qa_agent.yaml", "qa_agent")
-    prompt = template.render()
+    template = prompt_template_config("api/agents/prompts/product_qa_agent.yaml", "product_qa_agent")
 
-    messages = sanitize_messages(state.messages)
-
-    llm = ChatOpenAI(model="gpt-4.1-mini")
-    llm_with_tools = llm.bind_tools(
-        [get_formatted_items_context, FinalResponse],
-        tool_choice="auto"
+    prompt = template.render(
+        available_tools=state.product_qa_agent.available_tools
     )
-
-    for i, m in enumerate(messages):
-        print(f"[{i}] {type(m).__name__}: tool_calls={getattr(m, 'tool_calls', [])} tool_call_id={getattr(m, 'tool_call_id', None)}")
-
-    response = llm_with_tools.invoke(
-        [
-            SystemMessage(content=prompt),
-            *messages
-        ]
-    )
-
-    current_run = get_current_run_tree()
-    if current_run:
-        current_run.metadata["usage_metadata"] = {
-            "input_tokens": response.response_metadata["token_usage"]["prompt_tokens"],
-            "output_tokens": response.response_metadata["token_usage"]["completion_tokens"],
-            "total_tokens": response.response_metadata["token_usage"]["total_tokens"]
-        }
-
-    final_answer = False
-    answer = ""
-    references = []
-
-    if len(response.tool_calls) > 0:
-        for tool_call in response.tool_calls:
-            if tool_call.get("name") == "FinalResponse":
-                final_answer = True
-                answer = tool_call.get("args").get("answer")
-                references.extend(tool_call.get("args").get("references"))
-
-    return {
-        "messages": [response],
-        "iteration": state.iteration + 1,
-        "answer": answer,
-        "final_answer": final_answer,
-        "references": references
-    }
-
-
-### Intent Router Node
-
-@traceable(
-    name="route_intent",
-    run_type="llm",
-    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
-)
-def intent_router_node(state) -> dict:
-
-    template = prompt_template_config("api/agents/prompts/intent_router_agent.yaml", "intent_router_agent")
-    prompt = template.render()
 
     messages = state.messages
 
     conversation = []
 
     for message in messages:
-        if isinstance(message, HumanMessage):
-            conversation.append({"role": "user", "content": message.content})
-        elif isinstance(message, AIMessage) and isinstance(message.content, str):
-            conversation.append({"role": "assistant", "content": message.content})
-
-    # for message in messages:
-    #     conversation.append(convert_to_openai_messages(message))
+        conversation.append(convert_to_openai_messages(message))
 
     client = instructor.from_provider(
-        "openai/gpt-4.1-mini",
-        mode=instructor.Mode.RESPONSES_TOOLS
+        "openai/gpt-4.1-mini"
     )
 
     response, raw_response = client.create_with_completion(
@@ -138,22 +96,131 @@ def intent_router_node(state) -> dict:
             {"role": "system", "content": prompt},
             *conversation
         ],
-        response_model=IntentRouterResponse
+        response_model=ProductQAAgentResponse,
+        temperature=0.5,
     )
 
     current_run = get_current_run_tree()
+
     if current_run:
         current_run.metadata["usage_metadata"] = {
-            "input_tokens": raw_response.usage.input_tokens,
-            "output_tokens": raw_response.usage.output_tokens,
+            "input_tokens": raw_response.usage.prompt_tokens,
+            "output_tokens": raw_response.usage.completion_tokens,
             "total_tokens": raw_response.usage.total_tokens
         }
-        trace_id = str(getattr(current_run, "trace_id", current_run.id))
-    else:
-        trace_id = ""
+
+    ai_message = format_ai_message(response)
 
     return {
-        "question_relevant": response.question_relevant,
+        "messages": [ai_message],
+        "product_qa_agent": {
+            "tool_calls": [tool_call.model_dump() for tool_call in response.tool_calls],
+            "iteration": state.product_qa_agent.iteration + 1,
+            "final_answer": response.final_answer,
+            "available_tools": state.product_qa_agent.available_tools
+        },
         "answer": response.answer,
-        "trace_id": trace_id
+        "references": response.references
+    }
+
+
+### Shopping Cart Agent
+
+@traceable(
+    name="shopping_cart_agent",
+    run_type="llm",
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
+)
+def shopping_cart_agent(state) -> dict:
+
+    template = prompt_template_config("api/agents/prompts/shopping_cart_agent.yaml", "shopping_cart_agent")
+
+    prompt = template.render(
+        available_tools=state.shopping_cart_agent.available_tools,
+        user_id=state.user_id,
+        cart_id=state.cart_id
+    )
+
+    messages = state.messages
+
+    conversation = []
+
+    for message in messages:
+        conversation.append(convert_to_openai_messages(message))
+
+    client = instructor.from_provider(
+        "openai/gpt-4.1-mini"
+    )
+
+    response, raw_response = client.create_with_completion(
+        messages=[
+            {"role": "system", "content": prompt},
+            *conversation
+        ],
+        response_model=ShoppingCartAgentResponse,
+    )
+
+    ai_message = format_ai_message(response)
+
+    return {
+        "messages": [ai_message],
+        "shopping_cart_agent": {
+            "tool_calls": [tool_call.model_dump() for tool_call in response.tool_calls],
+            "iteration": state.shopping_cart_agent.iteration + 1,
+            "final_answer": response.final_answer,
+            "available_tools": state.shopping_cart_agent.available_tools
+        },
+        "answer": response.answer
+    }
+
+
+
+### Coordinator Agent
+
+@traceable(
+    name="coordinator_agent",
+    run_type="llm",
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
+)
+def coordinator_agent(state) -> dict:
+
+    template = prompt_template_config("api/agents/prompts/coordinator_agent.yaml", "coordinator_agent")
+
+    prompt = template.render()
+
+    messages = state.messages
+
+    conversation = []
+
+    for message in messages:
+        conversation.append(convert_to_openai_messages(message))
+
+    client = instructor.from_provider(
+        "openai/gpt-4.1-mini"
+    )
+
+    response, raw_response = client.create_with_completion(
+        messages=[
+            {"role": "system", "content": prompt},
+            *conversation
+        ],
+        response_model=CoordinatorAgentResponse,
+    )
+
+    if response.final_answer:
+        ai_message = [AIMessage(
+            content=response.answer
+        )]
+    else:
+        ai_message = []
+ 
+    return {
+        "messages": ai_message,
+        "answer": response.answer,
+        "coordinator_agent": {
+            "iteration": state.coordinator_agent.iteration + 1,
+            "final_answer": response.final_answer,
+            "next_agent": response.next_agent,
+            "plan": [data.model_dump() for data in response.plan]
+        }
     }

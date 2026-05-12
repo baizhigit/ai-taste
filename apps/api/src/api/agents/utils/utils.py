@@ -2,6 +2,7 @@ import ast
 import inspect
 from typing import Dict, Any
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import StructuredTool, BaseTool
 import json
 
 
@@ -159,10 +160,61 @@ def get_tool_descriptions(function_list):
     descriptions = []
 
     for function in function_list:
-        function_string = inspect.getsource(function)
-        result = parse_function_definition(function_string)
-
-        if result:
-            descriptions.append(result)
+        try:
+            # Handle LangChain StructuredTool / BaseTool instances
+            if isinstance(function, BaseTool):
+                result = parse_langchain_tool(function)
+            else:
+                # Original path for plain Python functions
+                function_string = inspect.getsource(function)
+                result = parse_function_definition(function_string)
+            
+            if result:
+                descriptions.append(result)
+        except (OSError, TypeError) as e:
+            print(f"Warning: Could not extract source for {function}: {e}")
     
     return descriptions if descriptions else "Could not extract tool descriptions"
+
+
+def parse_langchain_tool(tool: BaseTool) -> Dict[str, Any]:
+    """Extract metadata from a LangChain StructuredTool or BaseTool."""
+    result = {
+        "name": tool.name,
+        "description": tool.description or "",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        },
+        "returns": {"type": "string", "description": ""}
+    }
+
+    # StructuredTool exposes an args_schema (Pydantic model)
+    schema = getattr(tool, "args_schema", None)
+    if schema is not None:
+        json_schema = schema.model_json_schema()  # Pydantic v2
+        # json_schema = schema.schema()           # Pydantic v1 fallback
+
+        properties = json_schema.get("properties", {})
+        required = json_schema.get("required", [])
+
+        for param_name, param_info in properties.items():
+            result["parameters"]["properties"][param_name] = {
+                "type": param_info.get("type", "string"),
+                "description": param_info.get("description", "")
+            }
+
+        result["parameters"]["required"] = required
+
+    elif hasattr(tool, "func") and tool.func is not None:
+        # Fallback: try to parse the underlying function directly
+        try:
+            function_string = inspect.getsource(tool.func)
+            parsed = parse_function_definition(function_string)
+            result["parameters"] = parsed.get("parameters", result["parameters"])
+            result["returns"] = parsed.get("returns", result["returns"])
+        except (OSError, TypeError):
+            pass
+
+    return result

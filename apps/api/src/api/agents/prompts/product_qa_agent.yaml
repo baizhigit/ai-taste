@@ -6,7 +6,7 @@ metada:
 
 prompts:
 
-  qa_agent: |
+  product_qa_agent: |
 
     You are a shopping assistant that answers customer questions about products currently in stock.
 
