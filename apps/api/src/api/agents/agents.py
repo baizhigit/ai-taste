@@ -34,6 +34,14 @@ class ShoppingCartAgentResponse(BaseModel):
     tool_calls: List[ToolCall] = []
 
 
+### Warehouse Manager Agent Response Model
+
+class WarehouseManagerAgentResponse(BaseModel):
+    answer: str = Field(description="Answer to the question.")
+    final_answer: bool = False
+    tool_calls: List[ToolCall] = []
+
+
 ### Coordinator Agent Response Model
 
 class Delegation(BaseModel):
@@ -47,30 +55,13 @@ class CoordinatorAgentResponse(BaseModel):
     answer: str
 
 
-# def sanitize_messages(messages):
-#     sanitized = []
-#     i = 0
-#     while i < len(messages):
-#         msg = messages[i]
-#         if isinstance(msg, AIMessage) and msg.tool_calls:
-#             # Drop FinalResponse calls entirely — they have no ToolMessage
-#             real_calls = [tc for tc in msg.tool_calls if tc["name"] != "FinalResponse"]
-#             if not real_calls:
-#                 i += 1
-#                 continue  # skip this message entirely
-#             if len(real_calls) < len(msg.tool_calls):
-#                 msg = AIMessage(content=msg.content, tool_calls=real_calls)
-#         sanitized.append(msg)
-#         i += 1
-#     return sanitized
-
 
 ### Product QnA Agent
 
 @traceable(
     name="product_qa_agent",
     run_type="llm",
-    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1"}
 )
 def product_qa_agent(state) -> dict:
 
@@ -88,7 +79,7 @@ def product_qa_agent(state) -> dict:
         conversation.append(convert_to_openai_messages(message))
 
     client = instructor.from_provider(
-        "openai/gpt-4.1-mini"
+        "openai/gpt-4.1"
     )
 
     response, raw_response = client.create_with_completion(
@@ -129,7 +120,7 @@ def product_qa_agent(state) -> dict:
 @traceable(
     name="shopping_cart_agent",
     run_type="llm",
-    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1"}
 )
 def shopping_cart_agent(state) -> dict:
 
@@ -149,7 +140,7 @@ def shopping_cart_agent(state) -> dict:
         conversation.append(convert_to_openai_messages(message))
 
     client = instructor.from_provider(
-        "openai/gpt-4.1-mini"
+        "openai/gpt-4.1"
     )
 
     response, raw_response = client.create_with_completion(
@@ -158,7 +149,17 @@ def shopping_cart_agent(state) -> dict:
             *conversation
         ],
         response_model=ShoppingCartAgentResponse,
+        temperature=0.5
     )
+
+    current_run = get_current_run_tree()
+
+    if current_run:
+        current_run.metadata["usage_metadata"] = {
+            "input_tokens": raw_response.usage.prompt_tokens,
+            "output_tokens": raw_response.usage.completion_tokens,
+            "total_tokens": raw_response.usage.total_tokens
+        }
 
     ai_message = format_ai_message(response)
 
@@ -174,13 +175,71 @@ def shopping_cart_agent(state) -> dict:
     }
 
 
+### Warehouse Manager Agent
+
+@traceable(
+    name="warehouse_manager_agent",
+    run_type="llm",
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1"}
+)
+def warehouse_manager_agent(state) -> dict:
+
+    template = prompt_template_config("api/agents/prompts/warehouse_manager_agent.yaml", "warehouse_manager_agent")
+
+    prompt = template.render(
+        available_tools=state.warehouse_manager_agent.available_tools
+    )
+
+    messages = state.messages
+
+    conversation = []
+
+    for message in messages:
+        conversation.append(convert_to_openai_messages(message))
+
+    client = instructor.from_provider(
+        "openai/gpt-4.1"
+    )
+
+    response, raw_response = client.create_with_completion(
+        messages=[
+            {"role": "system", "content": prompt},
+            *conversation
+        ],
+        response_model=WarehouseManagerAgentResponse,
+        temperature=0.5
+    )
+
+    current_run = get_current_run_tree()
+
+    if current_run:
+        current_run.metadata["usage_metadata"] = {
+            "input_tokens": raw_response.usage.prompt_tokens,
+            "output_tokens": raw_response.usage.completion_tokens,
+            "total_tokens": raw_response.usage.total_tokens
+        }
+
+    ai_message = format_ai_message(response)
+
+    return {
+        "messages": [ai_message],
+        "warehouse_manager_agent": {
+            "tool_calls": [tool_call.model_dump() for tool_call in response.tool_calls],
+            "iteration": state.warehouse_manager_agent.iteration + 1,
+            "final_answer": response.final_answer,
+            "available_tools": state.warehouse_manager_agent.available_tools
+        },
+        "answer": response.answer
+    }
+
+
 
 ### Coordinator Agent
 
 @traceable(
     name="coordinator_agent",
     run_type="llm",
-    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1-mini"}
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-4.1"}
 )
 def coordinator_agent(state) -> dict:
 
@@ -196,7 +255,7 @@ def coordinator_agent(state) -> dict:
         conversation.append(convert_to_openai_messages(message))
 
     client = instructor.from_provider(
-        "openai/gpt-4.1-mini"
+        "openai/gpt-4.1"
     )
 
     response, raw_response = client.create_with_completion(
@@ -205,7 +264,18 @@ def coordinator_agent(state) -> dict:
             *conversation
         ],
         response_model=CoordinatorAgentResponse,
+        temperature=0.5
     )
+
+    current_run = get_current_run_tree()
+
+    if current_run:
+        current_run.metadata["usage_metadata"] = {
+            "input_tokens": raw_response.usage.prompt_tokens,
+            "output_tokens": raw_response.usage.completion_tokens,
+            "total_tokens": raw_response.usage.total_tokens
+        }
+        trace_id = str(getattr(current_run, "trace_id", current_run.id))
 
     if response.final_answer:
         ai_message = [AIMessage(
@@ -222,5 +292,6 @@ def coordinator_agent(state) -> dict:
             "final_answer": response.final_answer,
             "next_agent": response.next_agent,
             "plan": [data.model_dump() for data in response.plan]
-        }
+        },
+        "trace_id": trace_id
     }

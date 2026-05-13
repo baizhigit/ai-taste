@@ -20,6 +20,7 @@ prompts:
 
     - product_qa_agent: The user is asking a question about a product. This can be a question about available products, their specifications, user reviews etc.
     - shopping_cart_agent: The user is asking to add or remove items from the shopping cart or questions about the current shopping cart.
+    - warehouse_manager_agent: The user is asking to reserve items from the warehouses or about availability of the items in warehouses.
 
     CRITICAL RULES:
     - If next_agent is "", final_answer MUST be false

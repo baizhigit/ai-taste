@@ -2,8 +2,8 @@ from pydantic import BaseModel, Field
 from typing import Dict, Any, Annotated, List
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
-from api.agents.tools import get_formatted_items_context, get_formatted_reviews_context, add_to_shopping_cart, remove_from_cart, get_shopping_cart
-from api.agents.agents import ToolCall, RAGUsedContext, Delegation, product_qa_agent, shopping_cart_agent, coordinator_agent
+from api.agents.tools import get_formatted_items_context, get_formatted_reviews_context, add_to_shopping_cart, remove_from_cart, get_shopping_cart, check_warehouse_availability, reserve_warehouse_items
+from api.agents.agents import ToolCall, RAGUsedContext, Delegation, product_qa_agent, shopping_cart_agent, warehouse_manager_agent, coordinator_agent
 from api.agents.utils.utils import get_tool_descriptions
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -31,6 +31,7 @@ class State(BaseModel):
     user_intent: str = ""
     product_qa_agent: AgentPreporties = Field(default_factory=AgentPreporties)
     shopping_cart_agent: AgentPreporties = Field(default_factory=AgentPreporties)
+    warehouse_manager_agent: AgentPreporties = Field(default_factory=AgentPreporties)
     coordinator_agent: CoordinatorAgentPreporties = Field(default_factory=CoordinatorAgentPreporties)
     answer: str = ""
     references: Annotated[List[RAGUsedContext], add] = []
@@ -64,6 +65,19 @@ def shopping_cart_agent_tool_edge(state) -> str:
         return "tools"
     else:
         return "end"
+    
+
+def warehouse_manager_agent_tool_edge(state) -> str:
+    """Decide whether to continue or end"""
+
+    if state.warehouse_manager_agent.final_answer:
+        return "end"
+    elif state.warehouse_manager_agent.iteration > 2:
+        return "end"
+    elif len(state.warehouse_manager_agent.tool_calls) > 0:
+        return "tools"
+    else:
+        return "end"
 
 
 def coordinator_agent_edge(state) -> str:
@@ -76,6 +90,8 @@ def coordinator_agent_edge(state) -> str:
         return "product_qa_agent"
     elif state.coordinator_agent.next_agent == "shopping_cart_agent":
         return "shopping_cart_agent"
+    elif state.coordinator_agent.next_agent == "warehouse_manager_agent":
+        return "warehouse_manager_agent"
     else:
         return "end"
     
@@ -93,12 +109,18 @@ shopping_cart_agent_tools = [add_to_shopping_cart, remove_from_cart, get_shoppin
 shopping_cart_agent_tool_node = ToolNode(shopping_cart_agent_tools)
 shopping_cart_agent_tool_description = get_tool_descriptions(shopping_cart_agent_tools)
 
+warehouse_manager_agent_tools = [check_warehouse_availability, reserve_warehouse_items]
+warehouse_manager_agent_tool_node = ToolNode(warehouse_manager_agent_tools)
+warehouse_manager_agent_tool_description = get_tool_descriptions(warehouse_manager_agent_tools)
+
 workflow.add_node("product_qa_agent", product_qa_agent)
 workflow.add_node("shopping_cart_agent", shopping_cart_agent)
+workflow.add_node("warehouse_manager_agent", warehouse_manager_agent)
 workflow.add_node("coordinator_agent", coordinator_agent)
 
 workflow.add_node("product_qa_agent_tool_node", product_qa_agent_tool_node)
 workflow.add_node("shopping_cart_agent_tool_node", shopping_cart_agent_tool_node)
+workflow.add_node("warehouse_manager_agent_tool_node", warehouse_manager_agent_tool_node)
 
 workflow.add_edge(START, "coordinator_agent")
 
@@ -108,6 +130,7 @@ workflow.add_conditional_edges(
     {
         "product_qa_agent": "product_qa_agent",
         "shopping_cart_agent": "shopping_cart_agent",
+        "warehouse_manager_agent": "warehouse_manager_agent",
         "end": END
     }
 )
@@ -129,9 +152,18 @@ workflow.add_conditional_edges(
         "end": "coordinator_agent"
     }
 )
+workflow.add_conditional_edges(
+    "warehouse_manager_agent",
+    warehouse_manager_agent_tool_edge,
+    {
+        "tools": "warehouse_manager_agent_tool_node",
+        "end": "coordinator_agent"
+    }
+)
 
 workflow.add_edge("product_qa_agent_tool_node", "product_qa_agent")
 workflow.add_edge("shopping_cart_agent_tool_node", "shopping_cart_agent")
+workflow.add_edge("warehouse_manager_agent_tool_node", "warehouse_manager_agent")
 
 
 
@@ -187,10 +219,16 @@ def agent_stream_wrapper(question, thread_id, top_k=5):
             "tool_calls": [],
             "final_answer": False
         },
+        "warehouse_manager_agent": {
+            "iteration": 0,
+            "available_tools": warehouse_manager_agent_tool_description,
+            "tool_calls": [],
+            "final_answer": False
+        },
         "coordinator_agent": {
             "iteration": 0,
             "plan": [],
-            "next_agent": "",
+            "next_agent": "", 
             "final_answer": False
         }
     }
