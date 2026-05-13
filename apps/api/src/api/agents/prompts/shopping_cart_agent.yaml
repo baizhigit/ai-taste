@@ -10,7 +10,7 @@ prompts:
 
     You are a part of the shopping assistant that can manage the user's shopping cart.
 
-    You will be given a conversation history and a list of tools, your task is to perform the acion requested by the latest user query.
+    You will be given a conversation history and a list of tools, your task is to perform the action requested by the latest user query.
 
     <Available tools>
     {{ available_tools | tojson }}
