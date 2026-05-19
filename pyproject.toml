@@ -27,6 +27,7 @@ members = [
 dev = [
     "cohere>=6.1.0",
     "fastmcp>=3.2.4",
+    "google-adk>=1.25",
     "langchain-mcp-adapters>=0.2.2",
     "langgraph>=1.1.10",
     "langgraph-checkpoint-postgres>=3.0.5",
