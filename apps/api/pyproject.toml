@@ -17,6 +17,7 @@ dependencies = [
     "langgraph>=1.1.10",
     "langgraph-checkpoint-postgres>=3.0.5",
     "langsmith>=0.7.24",
+    "litellm>=1.85.0",
     "openai>=2.29.0",
     "psycopg-binary>=3.3.4",
     "psycopg2-binary>=2.9.12",
