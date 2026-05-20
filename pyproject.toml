@@ -25,6 +25,7 @@ members = [
 
 [dependency-groups]
 dev = [
+    "a2a-sdk>=1.0.3",
     "cohere>=6.1.0",
     "fastmcp>=3.2.4",
     "google-adk>=1.25",
