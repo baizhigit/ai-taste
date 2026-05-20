@@ -1,17 +1,20 @@
+import asyncio
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 
 from a2a.server.agent_execution import AgentExecutor
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Part, TaskState, UnsupportedOperationError
+from a2a.types import Part, Task, TaskStatus, TaskState, UnsupportedOperationError
 from google.adk import Runner
 from google.adk.events import Event
 from google.genai import types
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+logging.getLogger("opentelemetry.context").setLevel(logging.CRITICAL)
 
 
 class WarehouseManagerAgentExecutor(AgentExecutor):
@@ -47,9 +50,10 @@ class WarehouseManagerAgentExecutor(AgentExecutor):
                 await task_updater.add_artifact(parts)
                 await task_updater.complete()
                 break
+
             if not event.get_function_calls():
                 logger.debug("Yielding update response")
-                task_updater.update_status(
+                await task_updater.update_status(
                     TaskState.TASK_STATE_WORKING,
                     message=task_updater.new_agent_message(
                         convert_genai_parts_to_a2a(
@@ -62,30 +66,71 @@ class WarehouseManagerAgentExecutor(AgentExecutor):
             else:
                 logger.debug("Skipping event")
 
+
     async def execute(
         self,
         context: RequestContext,
         event_queue: EventQueue,
     ):
-        if not context.task_id or not context.context_id:
-            raise ValueError("RequestContext must have task_id and context_id")
         if not context.message:
             raise ValueError("RequestContext must have a message")
-        
-        updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+
+        # v1.0: enqueue Task object first, before any TaskStatusUpdateEvent
         if not context.current_task:
-            updater.submit()
-        updater.start_work()
-        await self._process_request(
-            types.UserContent(
-                parts=convert_a2a_parts_to_genai(context.message.parts),
-            ),
-            context.context_id,
-            updater,
-        )
+            task = Task(
+                id=context.task_id,
+                context_id=context.context_id,
+                status=TaskStatus(
+                    state=TaskState.TASK_STATE_SUBMITTED,
+                    message=context.message,
+                ),
+            )
+            await event_queue.enqueue_event(task)
+
+        updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+        await updater.start_work()
+
+        try:
+            await self._process_request(
+                types.UserContent(
+                    parts=convert_a2a_parts_to_genai(context.message.parts),
+                ),
+                context.context_id,
+                updater,
+            )
+        finally:
+            await asyncio.sleep(0)
+
+    # async def execute(
+    #     self,
+    #     context: RequestContext,
+    #     event_queue: EventQueue,
+    # ):
+    #     if not context.task_id or not context.context_id:
+    #         raise ValueError("RequestContext must have task_id and context_id")
+    #     if not context.message:
+    #         raise ValueError("RequestContext must have a message")
+        
+    #     updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+    #     # if not context.current_task:
+    #     await updater.submit()
+    #     await updater.start_work()
+
+    #     try:
+    #         await self._process_request(
+    #             types.UserContent(
+    #                 parts=convert_a2a_parts_to_genai(context.message.parts),
+    #             ),
+    #             context.context_id,
+    #             updater,
+    #         )
+    #     finally:
+    #         # Give the queue dispatcher a tick to flush pending internal events
+    #         await asyncio.sleep(0)
+
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue):
-        raise SystemError(error=UnsupportedOperationError())
+        raise UnsupportedOperationError()
     
     async def _upsert_session(self, session_id: str):
         session = await self.runner.session_service.get_session(
@@ -113,29 +158,6 @@ def convert_a2a_parts_to_genai(parts: list[Part]) -> list[types.Part]:
     return [convert_a2a_part_to_genai(part) for part in parts]
 
 
-# def convert_a2a_part_to_genai(part: Part) -> types.Part:
-#     """Convert a single A2A Part type into a Google Gen AI Part type."""
-#     root = part.root
-#     if isinstance(root, TextPart):
-#         return types.Part(text=root.text)
-#     if isinstance(root, FilePart):
-#         if isinstance(root.file, FileWithUri):
-#             return types.Part(
-#                 file_data=types.FileData(
-#                     file_uri=root.filesuri, mime_type=root.file.mimeType
-#                 )
-#             )
-#         if isinstance(root.file, FileWithBytes):
-#             return types.Part(
-#                 inline_data=types.Blob(
-#                     data=root.file.bytes.encode("utf-8"),
-#                     mime_type=root.file.mimeType or "application/octet-stream",
-#                 ) 
-#             )
-#         raise ValueError(f"Unsupported file type: {type(root.file)}")
-#     raise ValueError(f"Unsupported part type: {type(part)}")
-
-
 def convert_a2a_part_to_genai(part: Part) -> types.Part:
     """Convert a single A2A Part type into a Google Gen AI Part type."""
     if part.HasField("text"):
@@ -159,40 +181,14 @@ def convert_a2a_part_to_genai(part: Part) -> types.Part:
 
 def convert_genai_parts_to_a2a(parts: list[types.Part]) -> list[Part]:
     """Convert a list of Google Gen AI Part types into a list of A2A Part types."""
-    return [
-        convert_genai_part_to_a2a(part)
-        for part in parts
-        if (part.text or part.file_data or part.inline_data)
-    ]
+    result = []
+    for part in parts:
+        if part.text or part.file_data or part.inline_data:
+            result.append(convert_genai_part_to_a2a(part))
+        else:
+            logger.debug("Skipping unsupported part type: %s", part)
+    return result
 
-
-# def convert_genai_part_to_a2a(part: types.Part) -> Part:
-#     """Convert a single Google Gen AI Part type into an A2A Part type."""
-#     if part.text:
-#         return Part(root=TextPart(text=part.text))
-#     if part.file_data:
-#         if not part.file_data.file_uri:
-#             raise ValueError("File URI is missing")
-#         return Part(
-#             root=FilePart(
-#                 file=FileWithUri(
-#                     uri=part.file_data.file_uri,
-#                     mimeType=part.file_data.mime_type,
-#                 )
-#             )
-#         )
-#     if part.inline_data:
-#         if not part.inline_data.data:
-#             raise ValueError("Inline data is missing")
-#         return Part(
-#             root=FilePart(
-#                 file=FileWithBytes(
-#                     bytes=part.inline_data.data.decode("utf-8"),
-#                     mimeType=part.inline_data.mime_type,
-#                 )
-#             )
-#         )
-#     raise ValueError("Unsupported part type: {part}")
 
 def convert_genai_part_to_a2a(part: types.Part) -> Part:
     """Convert a single Google Gen AI Part type into an A2A Part type."""
