@@ -37,6 +37,7 @@ class State(BaseModel):
     references: Annotated[List[RAGUsedContext], add] = []
     user_id: str = ""
     cart_id: str = ""
+    trace_id: str = ""
 
 
 ### Edges
@@ -191,15 +192,19 @@ def agent_stream_wrapper(question, thread_id, top_k=5):
                 return f"Unknown tool: {tool_call.name}"
 
         if _is_node_start(chunk):
-            if chunk[1].get("payload", {}).get("name") == "intent_router_node":
-                return "Analysing the question..."
-            if chunk[1].get("payload", {}).get("name") == "agent_node":
+            if chunk[1].get("payload", {}).get("name") == "coordinator_agent":
                 return "Planning..."
+            if chunk[1].get("payload", {}).get("name") == "product_qa_agent":
+                return "Fetching information about inventory..."
+            if chunk[1].get("payload", {}).get("name") == "shopping_cart_agent":
+                return "Shopping cart management..."
+            if chunk[1].get("payload", {}).get("name") == "warehouse_manager_agent":
+                return "Warehouse management..."
             if chunk[1].get("payload", {}).get("name") == "tool_node":
                 message = " ".join([_tool_to_text(tool_call) for tool_call in chunk[1].get('payload', {}).get('input', {}).messages[-1].tool_calls])
                 return message
         else:
-            return False
+            return "Unknown operation..."
 
     qdrant_client = QdrantClient(url="http://qdrant:6333")
 
