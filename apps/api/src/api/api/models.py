@@ -3,8 +3,8 @@ from typing import Optional, Union
 
 
 class RAGRequest(BaseModel):
-    query: str
-    thread_id: str
+    query: str = Field(description="The query to be used in the RAG pipeline")
+    thread_id: str = Field(description="The thread ID")
 
 class RAGUsedContext(BaseModel):
     image_url: str = Field(description="URL of the image of the item used to answer the question")
@@ -25,3 +25,9 @@ class FeedbackRequest(BaseModel):
 
 class FeedbackResponse(BaseModel):
     message: str = Field(description="Message indicating that the feedback has been submitted")
+
+
+class HitlRequest(BaseModel):
+    thread_id: str = Field(description="The thread ID")
+    approved: bool = Field(description="Whether the HITL response was approved")
+    feedback: str = Field(description="The feedback")
