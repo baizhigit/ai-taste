@@ -1,2 +1,2 @@
 # ai-taste
-hands on ai tech
+End-to-End AI Engineering application 
