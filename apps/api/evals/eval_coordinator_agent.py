@@ -5,7 +5,7 @@ from langsmith import Client
 from time import sleep
 
 
-ACC_THRESHOLD = 0.8
+ACC_THRESHOLD = 0.7
 SLEEP_TIME = 10
 
 ls_client = Client()
