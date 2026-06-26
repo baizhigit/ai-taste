@@ -49,7 +49,7 @@ def main():
         name="Reserve Items",
         description="Reserve items in the warehouses",
         tags=["warehouse", "reservation"],
-        examples=["reserve 10 items of the item 123 in the Berlin warehouse."]
+        examples=["reserve 10 items of the item 123 in the Almaty warehouse."]
     )
 
     agent_card = AgentCard(

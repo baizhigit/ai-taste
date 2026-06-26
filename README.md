@@ -1,2 +1,2 @@
 # ai-taste
-End-to-End AI Engineering application 
+End-to-End AI Engineering application 🤖
