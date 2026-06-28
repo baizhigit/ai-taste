@@ -250,9 +250,9 @@ def warehouse_manager_agent(state, models=["gpt-5.4-mini", "groq/llama-3.3-70b-v
 @traceable(
     name="coordinator_agent",
     run_type="llm",
-    metadata={"ls_provider": "openai", "ls_model_name": "gpt-5.4-mini"}
+    metadata={"ls_provider": "openai", "ls_model_name": "gpt-5.4"}
 )
-def coordinator_agent(state, models=["gpt-5.4-mini", "groq/llama-3.3-70b-versatile"]) -> dict:
+def coordinator_agent(state, models=["gpt-5.4", "groq/llama-3.3-70b-versatile"]) -> dict:
 
     prompts = {}
 

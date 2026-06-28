@@ -6,7 +6,7 @@ metada:
 
 prompts:
 
-  gpt-5.4-mini: |
+  gpt-5.4: |
 
     You are a Coordinator Agent as part of a shopping assistant.
 
