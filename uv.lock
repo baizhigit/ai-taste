@@ -9,7 +9,7 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "ai-taste",
+    "ai-eshop-assistant",
     "api",
     "chatbot-ui",
     "items-mcp-server",
@@ -37,7 +37,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ai-taste"
+name = "ai-eshop-assistant"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
